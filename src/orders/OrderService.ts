@@ -1,36 +1,37 @@
 import { database } from "../database.ts";
 import type { CartLine } from "../shared/calculateTotal.ts";
-// Deliberate boundary violation: Orders depends on a Payments implementation detail.
-import { StripeClient, type StripePayload } from "../payments/internal/StripeClient.ts";
-import { mapPaymentStatus } from "./mapPaymentStatus.ts";
+import { InventoryService } from "../inventory/StockRepository.ts";
+import { PaymentsService, type PaymentGateway } from "../payments/index.ts";
 
 export class OrderService {
-  private readonly stripe: StripeClient;
+  private readonly inventory: InventoryService;
+  private readonly payments: PaymentGateway;
 
-  constructor(stripe = new StripeClient()) {
-    this.stripe = stripe;
+  constructor(
+    inventory = new InventoryService(),
+    payments: PaymentGateway = new PaymentsService(),
+  ) {
+    this.inventory = inventory;
+    this.payments = payments;
   }
 
-  async placeOrder(orderId: string, lines: CartLine[], total: number, payload: StripePayload) {
-    for (const line of lines) {
-      const row = database.stock.get(line.productId);
-      if (!row || row.available < line.quantity) {
-        throw new Error(`Insufficient stock for ${line.productId}`);
-      }
-
-      // Deliberate ownership violation: Orders writes Inventory storage directly.
-      database.stock.set(line.productId, {
-        productId: line.productId,
-        available: row.available - line.quantity,
-      });
-    }
-
+  async placeOrder(
+    orderId: string,
+    lines: readonly CartLine[],
+    total: number,
+    payment: { token: string; currency: string },
+  ) {
+    this.inventory.reserve(lines);
     database.orders.set(orderId, { id: orderId, status: "created", total });
-    const providerResponse = await this.stripe.createCharge(payload);
-    const paymentStatus = mapPaymentStatus(providerResponse);
+    const paymentResult = await this.payments.authorize({
+      orderId,
+      token: payment.token,
+      amount: total,
+      currency: payment.currency,
+    });
     const order = database.orders.get(orderId)!;
-    order.paymentStatus = paymentStatus;
-    order.status = paymentStatus === "paid" ? "confirmed" : "payment_pending";
+    order.paymentStatus = paymentResult.status;
+    order.status = paymentResult.status === "paid" ? "confirmed" : "payment_pending";
     return { ...order };
   }
 }

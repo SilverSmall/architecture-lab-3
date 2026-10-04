@@ -41,6 +41,18 @@ test("failed payment keeps the existing API behaviour", async () => {
   assert.equal(response.status, "payment_pending");
 });
 
+test("processing payment returns the added normalized status", async () => {
+  const response = await new CheckoutController().checkout({
+    orderId: "order-processing",
+    paymentToken: "process_card",
+    currency: "UAH",
+    lines: [{ productId: "book", unitPrice: 50, quantity: 1 }],
+  });
+
+  assert.equal(response.paymentStatus, "processing");
+  assert.equal(response.status, "payment_pending");
+});
+
 test("checkout rejects an unavailable product", async () => {
   await assert.rejects(
     () => new CheckoutController().checkout({

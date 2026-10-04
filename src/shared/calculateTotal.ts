@@ -1,23 +1,24 @@
-import { auditLog, runtimeConfig } from "../config.ts";
-
 export type CartLine = {
   productId: string;
   unitPrice: number;
   quantity: number;
-  lineTotal?: number;
 };
 
-// Intentionally impure: this function reads globals, mutates its argument and logs.
-export function calculateTotal(lines: CartLine[]): number {
+export type PricingRules = {
+  taxRate: number;
+  discountPercent: number;
+};
+
+export function calculateTotal(
+  lines: readonly CartLine[],
+  rules: PricingRules,
+): number {
   let subtotal = 0;
 
   for (const line of lines) {
-    line.lineTotal = line.unitPrice * line.quantity;
-    subtotal += line.lineTotal;
+    subtotal += line.unitPrice * line.quantity;
   }
 
-  const discounted = subtotal * (1 - runtimeConfig.discountPercent / 100);
-  const total = Number((discounted * (1 + runtimeConfig.taxRate)).toFixed(2));
-  auditLog.push(`total_calculated:${total}`);
-  return total;
+  const discounted = subtotal * (1 - rules.discountPercent / 100);
+  return Number((discounted * (1 + rules.taxRate)).toFixed(2));
 }
