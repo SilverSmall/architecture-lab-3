@@ -10,7 +10,7 @@ export type StripePayload = {
 
 export type StripeResponse = {
   charge_id: string;
-  state: "succeeded" | "requires_action" | "declined";
+  state: string;
 };
 
 export class StripeClient {
