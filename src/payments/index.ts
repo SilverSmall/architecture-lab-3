@@ -1,35 +1,17 @@
-import { StripeClient } from "./internal/StripeClient.ts";
-import { normalizeProviderStatus } from "./internal/normalizeProviderStatus.ts";
+import type { PaymentGateway, PaymentRequest, PaymentResult } from "./contracts.ts";
+import type { PaymentAdapter } from "./internal/PaymentAdapter.ts";
+import { createPaymentAdapter, type PaymentProviderName } from "./internal/createPaymentAdapter.ts";
 
-export type PaymentStatus = "paid" | "processing" | "failed";
-
-export type PaymentRequest = {
-  orderId: string;
-  token: string;
-  amount: number;
-  currency: string;
-};
-
-export type PaymentResult = {
-  status: PaymentStatus;
-};
-
-/** Provider-neutral API used by other application modules. */
-export interface PaymentGateway {
-  authorize(request: PaymentRequest): Promise<PaymentResult>;
-}
+export type { PaymentGateway, PaymentRequest, PaymentResult, PaymentStatus } from "./contracts.ts";
 
 export class PaymentsService implements PaymentGateway {
-  private readonly stripe = new StripeClient();
+  private readonly adapter: PaymentAdapter;
+
+  constructor(provider: PaymentProviderName = "stripe") {
+    this.adapter = createPaymentAdapter(provider);
+  }
 
   async authorize(request: PaymentRequest): Promise<PaymentResult> {
-    const response = await this.stripe.createCharge({
-      id: request.token,
-      amount: Math.round(request.amount * 100),
-      currency: request.currency,
-      metadata: { orderId: request.orderId },
-    });
-
-    return { status: normalizeProviderStatus(response.state) };
+    return this.adapter.authorize(request);
   }
 }

@@ -40,57 +40,93 @@
 
 ## Decision 2: Безпечна поведінка для невідомого provider status
 
-**Problem:** Provider може повернути новий або некоректний status, якого система ще не розпізнає.
+**Problem:** Provider може повернути status, якого система ще не розпізнає.
 
-**Evidence:** Початкова реалізація трактувала будь-яку відповідь, що не була `succeeded` або `requires_action`, як невдалу оплату, але не мала окремого тесту на невідоме значення.
+**Evidence:** Початковий mapping трактував усі інші відповіді як невдалі, але не мав тесту на невідоме значення.
 
-**Decision:** Нормалізатор Payments повертає `failed` для невідомого статусу; значення не поширюється в публічну відповідь системи.
+**Decision:** Payments повертає `failed` для невідомого статусу й не передає provider-значення назовні.
 
-**Why:** Це не дозволяє непідтвердженій оплаті випадково стати успішною та зберігає обмежений набір системних статусів.
+**Why:** Непідтверджена оплата не стане успішною, а consumers отримують обмежений стабільний набір статусів.
 
 **Alternative:** Повертати новий статус або кидати помилку.
 
-**Why rejected:** Новий статус порушив би контракт споживачів, а помилка provider-а обірвала б обробку замовлення.
+**Why rejected:** Новий статус порушив би контракт consumers, а виняток обірвав би обробку замовлення.
 
-**Trade-off:** Новий provider status потребує явного оновлення mapping-а й тесту, перш ніж отримати окрему семантику.
+**Trade-off:** Новий provider status потребує явного mapping-а й тесту, перш ніж отримати окрему семантику.
 
-**Verification:** Unit test передає невідоме значення та перевіряє результат `failed`.
+**Verification:** Unit test передає невідоме значення та перевіряє `failed`.
 
 ## Decision 3: Публічний Payments API та ownership залишків
 
-**Problem:** Checkout і Orders залежали від Stripe деталей, а Orders напряму читав та змінював stock storage.
+**Problem:** Checkout і Orders знали деталі Stripe, а Orders напряму змінював залишки.
 
-**Evidence:** `CheckoutController` будував Stripe payload, `OrderService` створював StripeClient і виконував цикли над `database.stock`; StripeClient водночас викликав Orders internals.
+**Evidence:** Checkout будував Stripe payload; Orders читав `database.stock`; StripeClient викликав Orders internals.
 
-**Decision:** Payments надає provider-neutral `authorize`; Inventory надає all-or-nothing `reserve`, що спочатку перевіряє всі позиції й лише тоді записує зміни.
+**Decision:** Payments надає `authorize`; Inventory має all-or-nothing `reserve`, що перевіряє всі позиції перед записом.
 
-**Why:** Зовнішні модулі залежать від контракту та відповідальності власника даних. Нестача однієї позиції не залишає замовлення з частково зменшеними залишками.
+**Why:** Кожний модуль володіє своїми деталями. Нестача одного товару не лишає часткового списання.
 
-**Alternative:** Лишити прямі записи й домовитися, що Orders перевіряє всі товари уважно.
+**Alternative:** Дозволити Orders перевіряти та записувати кожен товар напряму.
 
-**Why rejected:** Домовленість не захищає invariant від наступного споживача чи частково виконаного циклу.
+**Why rejected:** Такий код може обійти Inventory правила й змінити частину залишків до помилки.
 
-**Trade-off:** Додаються межі й адаптація, але бізнес-власність треба підтримувати в Inventory та Payments.
+**Trade-off:** Межі потребують adapters, а відповідальність за правила треба підтримувати в Inventory та Payments.
 
-**Verification:** Функціональні тести перевіряють незмінений Checkout response; unit tests перевіряють відсутність часткової резервації та provider-neutral результати.
+**Verification:** Тести підтверджують сумісну Checkout відповідь, незмінені залишки при помилці та стабільний Payments результат.
 
 ## Decision 4: Явні входи для розрахунку суми
 
-**Problem:** `calculateTotal` читав глобальні tax і discount, мутував cart lines та писав у audit log.
+**Problem:** `calculateTotal` читав globals, змінював кошик і записував у audit log.
 
-**Evidence:** Одна функція залежала від runtimeConfig, додавала `lineTotal` до кожного об'єкта та створювала прихований logging side effect.
+**Evidence:** Функція залежала від `runtimeConfig`, додавала `lineTotal` до рядків і виконувала прихований side effect.
 
-**Decision:** Передавати `taxRate` і `discountPercent` явним об'єктом; розрахунок лише повертає число, а Checkout виконує audit logging окремо.
+**Decision:** Передавати `taxRate` і `discountPercent` явно; функція повертає число, Checkout окремо журналює результат.
 
-**Why:** Тепер однакові аргументи дають однаковий результат, а unit test не потребує глобальної підготовки й може перевірити, що вхідні lines не змінюються.
+**Why:** Однакові аргументи дають той самий результат; unit test перевіряє його без зміни вхідних рядків.
 
-**Alternative:** Лишити globals, але скидати їх у кожному тесті.
+**Alternative:** Лишити globals і скидати їх у тестах.
 
-**Why rejected:** Це приховує залежності й лишає мутацію та side effect у функції розрахунку.
+**Why rejected:** Залежності лишалися б прихованими, а функція й надалі мутувала б дані.
 
-**Trade-off:** Виклики повинні передавати pricing rules, зате calculation можна зрозуміти й перевірити локально.
+**Trade-off:** Кожний виклик передає pricing rules, зате calculation легко зрозуміти локально.
 
-**Verification:** Unit test перевіряє два набори правил, точні суми й глибоку рівність cart lines до та після виклику.
+**Verification:** Unit test перевіряє дві суми та рівність cart lines до й після обчислення.
+
+## Decision 5: Другий provider як внутрішній adapter
+
+**Problem:** Новий provider може поширити власні payload, response й статуси в Checkout або Orders.
+
+**Evidence:** Stripe має свої request-поля й response-стани; інший provider використовує інший формат.
+
+**Decision:** Додати AcmePay adapter із власними request/response типами й вибором у `PaymentsService`; обидва повертають системний `PaymentResult`.
+
+**Why:** Consumers лишають той самий `PaymentGateway.authorize`; provider-specific зміни локалізовані в Payments.
+
+**Alternative:** Додати provider-гілки в OrderService або копіювати mapping у consumers.
+
+**Why rejected:** Обидва варіанти розносять знання про provider за межі Payments.
+
+**Trade-off:** Кожен adapter потребує mapping і тестів, натомість consumers мають стабільний контракт.
+
+**Verification:** Тести перевіряють три статуси для обох adapters і однакову форму Payments API.
+
+## Decision 6: Автоматичні architecture fitness functions
+
+**Problem:** Майбутня зміна може порушити межі Payments, ownership Inventory або напрям залежностей.
+
+**Evidence:** Звичайні behavior tests не виявляють internal imports, stock writes з consumers чи цикли imports.
+
+**Decision:** Додати `npm run check:architecture`: він сканує дерево `src`, будує граф локальних imports і перевіряє internal leaks, stock writes з Orders/Checkout та cycles.
+
+**Why:** Перевірка охоплює файли поточного дерева й показує регресію до merge.
+
+**Alternative:** Шукати один рядок або покладатися на code review.
+
+**Why rejected:** Один шаблон пропустить інші файли та не визначить dependency cycles.
+
+**Trade-off:** Аналізатор розуміє статичні локальні imports, зате не потребує додаткових пакетів.
+
+**Verification:** Тимчасові source trees перевіряють усі три violations та чистий прохід; CLI тестує ненульовий код помилки.
 
 ## AI review
 

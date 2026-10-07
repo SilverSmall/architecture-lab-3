@@ -1,4 +1,4 @@
-import type { PaymentStatus } from "../index.ts";
+import type { PaymentStatus } from "../contracts.ts";
 
 export function normalizeProviderStatus(providerStatus: string): PaymentStatus {
   switch (providerStatus) {

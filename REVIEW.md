@@ -21,3 +21,17 @@
 **Actual files changed:** `src/payments/index.ts`, `src/payments/internal/StripeClient.ts`, `src/payments/internal/normalizeProviderStatus.ts`, `src/orders/OrderService.ts`, `src/inventory/StockRepository.ts`, `src/checkout/CheckoutController.ts`, `src/shared/calculateTotal.ts`, deleted duplicate payment mappers and the Orders mutation helper, `tests/**`, `DECISIONS.md`, `REVIEW.md`, `README.md`.
 
 **Difference from prediction and explanation:** `Reports` і `Notifications` не потребували змін у поведінці: їхні дубльовані Stripe mappers видалені після переходу до normalized Payments API. Додано окремі unit tests для Inventory та чистого розрахунку суми, щоб прямо перевірити критерії рівня 75.
+
+## Level 90 extension prediction (до реалізації рівня 90)
+
+**Requirement:** Додати другий локальний provider без зміни Payments consumer contract; автоматично перевіряти module boundaries, Inventory ownership та цикли imports; записати рішення й вимірюваний trigger для можливої service boundary.
+
+**Expected files:** `src/payments/**`, `scripts/check-architecture.mjs`, `package.json`, `tests/**`, `DECISIONS.md`, `ADR-001-payments-boundary.md`, `README.md`.
+
+**Modules that should not change:** `Checkout`, `Orders`, `Reports`, `Notifications`; вони мають залишитися незалежними від provider-specific деталей.
+
+## Level 90 actual impact
+
+**Actual files changed:** Додано `src/payments/contracts.ts`, спільний internal adapter contract, Stripe adapter, AcmePay adapter та internal provider factory; оновлено `src/payments/index.ts`; додано `scripts/check-architecture.mjs`, `tests/architectureFitness.test.ts` і тести обох adapters; оновлено `package.json`, `README.md`, `DECISIONS.md` та заповнено `ADR-001-payments-boundary.md`.
+
+**Difference from prediction and explanation:** Checkout, Orders, Reports і Notifications не змінилися. Додано fixtures у fitness-function tests, щоб підтвердити, що перевірка знаходить порушення в різних файлах і цикли між різними модулями, а не лише шукає конкретний рядок у поточному коді.
